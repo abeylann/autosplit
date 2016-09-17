@@ -4,11 +4,26 @@ const express = require('express');
 const router = express.Router();
 const Stripe = require('stripe')('sk_test_hsoiKbJpKQnIyjrJgwVdSkJy');
 const Bluebird = require('bluebird');
+const Firebase = require('firebase');
+
+Firebase.initializeApp({
+  databaseURL: "https://autosplit-80be3.firebaseio.com/"
+});
+
+const db = Firebase.database();
+const ref = db.ref("/users");
+ref.once("value", function(snapshot) {
+	console.log('weee')
+  console.log(snapshot.val());
+});
+
+
 module.exports = router;
 
 router.post('/', (req, res, next) => {
 	console.log(req.body)
-	const requiredKeys = ['routing', 'account','ssn','fullName', 'email', 'date'];
+	const requiredKeys = ['routing', 'account','ssn','fullName', 'email'];
+	req.body.date = new Date('02/02/1996');
 	const isValid = requiredKeys.reduce((prev, curr) => {
 		return prev && req.body.hasOwnProperty(curr);
 	}, true)
@@ -33,6 +48,7 @@ router.post('/', (req, res, next) => {
 	  if(token) {
 	  	console.log(token)
 	  	const bankAccountInfo = token.bank_account
+	  	// bankAccountInfo.account_number = token.id
 
 	  	Stripe.accounts.create({
 	  		managed: 'true',
@@ -44,29 +60,36 @@ router.post('/', (req, res, next) => {
 	  			return res.status(400).send(err);
 	  		}
 	  		if(account) {
-	  			// console.log(account)
 	  			const keys = account.keys;
 	  			const accountId = account.id
-	  			const externalAccounts = account.external_account;
-	  			
-	  			externalAccounts.data.push(bankAccountInfo)
 
-	  			stripe.accounts.update(accountId, {
-	  				externalAccounts: externalAccounts,
-	  				display_name: req.body.fullName,
+	  			const dateOfBirth = new Date(req.body.date);
+
+	  			Stripe.accounts.update(accountId, {
+	  				external_account: bankAccountInfo,
 	  				legal_entity: {
-	  					day: dob.getDate(),
-	  					month: dob.getMonths()+1,
-	  					year: dob.getFullYear()
+	  					dob: {
+		  					day: dateOfBirth.getDate(),
+		  					month: dateOfBirth.getMonth()+1,
+		  					year: dateOfBirth.getFullYear(),
+	  					},
+	  					first_name: req.body.fullName.split(' ')[0],
+	  					last_name: req.body.fullName.split(' ')[1]
 	  				},
 	  				tos_acceptance: {
 	  					date: Math.floor(Date.now()/1000),
 	  					ip: req.connection.remoteAddress
 	  				}
 	  			}, function(err, account) {
-
+	  				if(err) {
+	  					
+	  					return res.status(400).send(err)
+	  				}
+	  				if(account) {
+	  					
+	  					return res.status(200);
+	  				}
 	  			})
-	  			return res.status(200);
 	  		}
 	  	})
 	  }
