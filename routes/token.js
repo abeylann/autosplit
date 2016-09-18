@@ -5,25 +5,17 @@ const router = express.Router();
 const Stripe = require('stripe')('sk_test_hsoiKbJpKQnIyjrJgwVdSkJy');
 const Bluebird = require('bluebird');
 const Firebase = require('firebase');
+const firebaseAuth = require('../private/firebase_auth.js');
 
-Firebase.initializeApp({
-  databaseURL: "https://autosplit-80be3.firebaseio.com/"
-});
+Firebase.initializeApp(firebaseAuth);
 
 const db = Firebase.database();
-const ref = db.ref("/users");
-ref.once("value", function(snapshot) {
-	console.log('weee')
-  console.log(snapshot.val());
-});
-
+const ref = db.ref("users");
 
 module.exports = router;
 
 router.post('/', (req, res, next) => {
-	console.log(req.body)
-	const requiredKeys = ['routing', 'account','ssn','fullName', 'email'];
-	req.body.date = new Date('02/02/1996');
+	const requiredKeys = ['routing', 'account','ssn','fullName', 'email', 'date', 'uid'];
 	const isValid = requiredKeys.reduce((prev, curr) => {
 		return prev && req.body.hasOwnProperty(curr);
 	}, true)
@@ -46,9 +38,7 @@ router.post('/', (req, res, next) => {
 	  	return res.status(400).send(err);
 	  } 
 	  if(token) {
-	  	console.log(token)
-	  	const bankAccountInfo = token.bank_account
-	  	// bankAccountInfo.account_number = token.id
+	  	const bankAccountInfo = token.id;
 
 	  	Stripe.accounts.create({
 	  		managed: 'true',
@@ -62,7 +52,6 @@ router.post('/', (req, res, next) => {
 	  		if(account) {
 	  			const keys = account.keys;
 	  			const accountId = account.id
-
 	  			const dateOfBirth = new Date(req.body.date);
 
 	  			Stripe.accounts.update(accountId, {
@@ -70,7 +59,7 @@ router.post('/', (req, res, next) => {
 	  				legal_entity: {
 	  					dob: {
 		  					day: dateOfBirth.getDate(),
-		  					month: dateOfBirth.getMonth()+1,
+		  					month: dateOfBirth.getMonth() + 1,
 		  					year: dateOfBirth.getFullYear(),
 	  					},
 	  					first_name: req.body.fullName.split(' ')[0],
@@ -82,12 +71,24 @@ router.post('/', (req, res, next) => {
 	  				}
 	  			}, function(err, account) {
 	  				if(err) {
-	  					
-	  					return res.status(400).send(err)
+	  					console.error(err);
+	  					return res.status(400).send(err);
 	  				}
 	  				if(account) {
-	  					
-	  					return res.status(200);
+	  					const userRef = ref.child(req.body.uid);
+	  					userRef.update({
+	  						stripeSk: keys.secret,
+	  						stripePk: keys.publishable,
+	  						bankAccountToken: bankAccountInfo
+	  					})
+	  					.then(() => {
+	  						console.log('sending back!')
+	  						return res.status(200).send();
+	  					})
+	  					.catch(err => {
+	  						console.error(err)
+	  						return res.status(400).send(err);
+	  					})
 	  				}
 	  			})
 	  		}
